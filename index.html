@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detective Investigation Sim</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #game-box {
+            background-color: #ffffff; /* White background for the game box */
+            padding: 2.5rem; /* Increased padding */
+            border-radius: 1rem; /* More rounded corners */
+            max-width: 768px; /* Max width for larger screens */
+            width: 100%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Softer, larger shadow */
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem; /* Space between sections */
+        }
+        .choice {
+            transition: all 0.2s ease-in-out; /* Smooth transitions for hover effects */
+        }
+        .choice:hover {
+            transform: translateY(-2px); /* Slight lift on hover */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); /* Subtle shadow on hover */
+        }
+        /* Custom scrollbar for story box if content overflows */
+        #story {
+            max-height: 200px; /* Limit height for story text */
+            overflow-y: auto; /* Enable vertical scrolling */
+            padding-right: 10px; /* Space for scrollbar */
+        }
+        #story::-webkit-scrollbar {
+            width: 8px;
+        }
+        #story::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        #story::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        #story::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        /* Modal styles */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1000; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="selection:bg-blue-200 selection:text-blue-800">
+    <div id="game-box" class="rounded-xl">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-4">Detective Investigation Sim</h2>
+        <div id="status" class="text-sm text-gray-600 text-center mb-4"></div>
+        <div id="story" class="bg-gray-50 p-4 rounded-lg text-gray-700 leading-relaxed text-lg"></div>
+        <div id="choices" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </div>
+
+    <!-- Modal for messages -->
+    <div id="messageModal" class="modal hidden">
+        <div class="modal-content rounded-lg">
+            <span class="close-button" onclick="hideModal()">&times;</span>
+            <p id="modalMessage" class="text-xl font-semibold text-gray-800 mb-4"></p>
+            <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-200" onclick="hideModal()">OK</button>
+        </div>
+    </div>
+
+    <script>
+        // Game State Object: Holds all current game data
+        const gameState = {
+            day: 1,
+            maxDays: 5, // You have 5 days to solve the case
+            cluesFound: new Set(), // Using a Set for unique clues
+            suspectsInterviewed: {}, // Tracks which suspects have been interviewed
+            currentLocation: 'School Grounds',
+            evidence: { // Specific evidence needed to pinpoint the culprit
+                'Lena': 'Lena\'s Alibi Discrepancy',
+                'Mark': 'Mark\'s Lab Access Card',
+                'Sarah': 'Sarah\'s Rivalry Notes'
+            },
+            correctCulprit: 'Mark', // The actual culprit for this game
+            culpritEvidence: 'Mark\'s Lab Access Card', // The key evidence against Mark
+            gameEnded: false
+        };
+
+        // DOM Elements
+        const storyBox = document.getElementById('story');
+        const choicesBox = document.getElementById('choices');
+        const statusBox = document.getElementById('status');
+        const messageModal = document.getElementById('messageModal');
+        const modalMessage = document.getElementById('modalMessage');
+
+        // Function to display messages in a modal
+        function showModal(message) {
+            modalMessage.textContent = message;
+            messageModal.style.display = 'flex'; // Use flex to center
+        }
+
+        // Function to hide the modal
+        function hideModal() {
+            messageModal.style.display = 'none';
+        }
+
+        // Updates the game status display
+        function updateStatus() {
+            statusBox.innerHTML = `
+                <p>Day: <span class="font-semibold text-blue-700">${gameState.day} / ${gameState.maxDays}</span></p>
+                <p>Location: <span class="font-semibold text-green-700">${gameState.currentLocation}</span></p>
+                <p>Clues Found: <span class="font-semibold text-purple-700">${gameState.cluesFound.size}</span></p>
+            `;
+        }
+
+        // Displays a scene with text and interactive choices
+        function showScene(text, choices) {
+            if (gameState.gameEnded) return; // Prevent actions if game has ended
+
+            storyBox.innerHTML = `<p>${text}</p>`;
+            choicesBox.innerHTML = '';
+
+            choices.forEach(choice => {
+                const btn = document.createElement('button');
+                btn.className = 'choice bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-md text-lg';
+                btn.textContent = choice.text;
+                btn.onclick = () => {
+                    // Advance day for most actions, but not for returning to main menu
+                    if (choice.advanceDay && !gameState.gameEnded) {
+                        gameState.day++;
+                        if (gameState.day > gameState.maxDays) {
+                            endGame(false, "You ran out of time! The case remains unsolved.");
+                            return;
+                        }
+                    }
+                    choice.action();
+                    updateStatus(); // Update status after every action
+                };
+                choicesBox.appendChild(btn);
+            });
+            updateStatus(); // Initial status update for the scene
+        }
+
+        // Main game loop/menu
+        function mainActions() {
+            gameState.currentLocation = 'School Grounds';
+            showScene(
+                "You're Alex, a student journalist. A confidential blueprint has gone missing from the school lab. You're on the case. What do you want to do?",
+                [
+                    { text: "Go to the Lab", action: () => goToLocation('Lab'), advanceDay: true },
+                    { text: "Go to the Library", action: () => goToLocation('Library'), advanceDay: true },
+                    { text: "Go to the Dorms", action: () => goToLocation('Dorms'), advanceDay: true },
+                    { text: "Go to the Cafeteria", action: () => goToLocation('Cafeteria'), advanceDay: true },
+                    { text: "Accuse a Suspect", action: accuseSuspectMenu }
+                ]
+            );
+        }
+
+        // Handles moving to different locations
+        function goToLocation(location) {
+            gameState.currentLocation = location;
+            let text = `You are now at the ${location}. What would you like to do?`;
+            let choices = [];
+
+            switch (location) {
+                case 'Lab':
+                    text = "You are in the school lab, the scene of the crime. The air is still, and a faint smell of chemicals lingers.";
+                    choices = [
+                        { text: "Examine the crime scene closely", action: () => findClue('Scratched USB Drive', 'You found a small, scratched USB drive near where the blueprint was kept. It looks like someone tried to erase its contents.') },
+                        { text: "Check the Lab Access Log", action: () => findClue('Lab Access Log', 'The lab access log shows who entered and exited the lab. You note down the times and names.') },
+                        { text: "Review Lab Camera Footage", action: () => findClue('Lab Camera Footage', 'The security camera footage from the lab reveals a blurred figure entering the lab late last night, but the face is unclear.') },
+                        { text: "Return to School Grounds", action: mainActions }
+                    ];
+                    break;
+                case 'Library':
+                    text = "The library is quiet, filled with the scent of old books. Students are scattered around, studying.";
+                    choices = [
+                        { text: "Talk to the Librarian", action: () => interview('Librarian') },
+                        { text: "Search for discarded notes", action: () => findClue('Suspicious Note Fragment', 'You found a small fragment of a note with a cryptic message about "urgent delivery" and "midnight".') },
+                        { text: "Return to School Grounds", action: mainActions }
+                    ];
+                    break;
+                case 'Dorms':
+                    text = "You are in the student dormitories. It's a bit noisy, with music playing from some rooms.";
+                    choices = [
+                        { text: "Interview Lena (Room 201)", action: () => interview('Lena') },
+                        { text: "Interview Mark (Room 203)", action: () => interview('Mark') },
+                        { text: "Interview Sarah (Room 205)", action: () => interview('Sarah') },
+                        { text: "Return to School Grounds", action: mainActions }
+                    ];
+                    break;
+                case 'Cafeteria':
+                    text = "The cafeteria is bustling with students. The aroma of today's lunch fills the air.";
+                    choices = [
+                        { text: "Listen to student gossip", action: () => findClue('Overheard Conversation', 'You overheard a conversation about Mark being seen near the lab late at night, looking agitated.') },
+                        { text: "Look for lost items", action: () => findClue('Lost ID Card', 'You found an ID card belonging to Professor Eldrin, dropped under a table.') },
+                        { text: "Return to School Grounds", action: mainActions }
+                    ];
+                    break;
+            }
+            showScene(text, choices);
+        }
+
+        // Handles finding clues
+        function findClue(clueName, description) {
+            if (!gameState.cluesFound.has(clueName)) {
+                gameState.cluesFound.add(clueName);
+                showModal(`You found a new clue: ${clueName}! ${description}`);
+            } else {
+                showModal(`You've already found the "${clueName}".`);
+            }
+            mainActions(); // Return to main menu after finding a clue
+        }
+
+        // Handles interviewing suspects
+        function interview(name) {
+            gameState.suspectsInterviewed[name] = true;
+            let dialogue = "";
+            let newClue = null;
+
+            switch (name) {
+                case "Lena":
+                    dialogue = "Lena says: 'I was practicing for my pitch all afternoon in the library. I didn’t even go near the lab!'";
+                    if (gameState.cluesFound.has('Suspicious Note Fragment')) {
+                        dialogue += " You show her the note fragment. She pales, 'That's... that's nothing! Just a reminder for a group project.' You suspect she's lying about something.";
+                        newClue = 'Lena\'s Alibi Discrepancy'; // Key evidence
+                    }
+                    break;
+                case "Mark":
+                    dialogue = "Mark says: 'I was in my dorm all evening, working on my robotics project. I never left.'";
+                    if (gameState.cluesFound.has('Lab Access Log')) {
+                        dialogue += " You check the lab access log you found earlier. It shows Mark accessed the lab around the time of the theft! He looks startled. 'Oh, right... I forgot, I just popped in for a second to grab my charger.'";
+                        newClue = 'Mark\'s Lab Access Card'; // Key evidence
+                    }
+                    break;
+                case "Sarah":
+                    dialogue = "Sarah says: 'I was at the gym until late, then went straight to my dorm. I have no idea about any blueprint.'";
+                    if (gameState.cluesFound.has('Overheard Conversation')) {
+                        dialogue += " You mention the gossip about her rivalry with the lab's lead student. She scoffs, 'That's just rumors. I don't care about their silly blueprints.' She seems overly defensive.";
+                        newClue = 'Sarah\'s Rivalry Notes'; // Key evidence
+                    }
+                    break;
+                case "Librarian":
+                    dialogue = "The Librarian says: 'Oh, yes, Lena was here all afternoon, very focused on her presentation. Mark was in and out a few times, seemed distracted. Sarah was not here at all.'";
+                    break;
+                default:
+                    dialogue = `You interview ${name}. They provide some information.`;
+            }
+
+            if (newClue && !gameState.cluesFound.has(newClue)) {
+                gameState.cluesFound.add(newClue);
+                showModal(`${dialogue} You gained a crucial piece of evidence: ${newClue}!`);
+            } else {
+                showModal(dialogue);
+            }
+            mainActions(); // Return to main menu after interview
+        }
+
+        // Presents the menu to accuse a suspect
+        function accuseSuspectMenu() {
+            showScene(
+                "Who do you think is responsible for stealing the confidential blueprint?",
+                [
+                    { text: "Accuse Lena", action: () => accuseSuspect('Lena') },
+                    { text: "Accuse Mark", action: () => accuseSuspect('Mark') },
+                    { text: "Accuse Sarah", action: () => accuseSuspect('Sarah') },
+                    { text: "Return to School Grounds", action: mainActions }
+                ]
+            );
+        }
+
+        // Handles accusing a suspect and determines win/lose
+        function accuseSuspect(accused) {
+            let win = false;
+            let message = "";
+
+            if (accused === gameState.correctCulprit) {
+                // Check if the player has the specific evidence against the culprit
+                if (gameState.cluesFound.has(gameState.culpritEvidence)) {
+                    win = true;
+                    message = `You've gathered enough evidence and correctly accused ${accused}! The confidential blueprint has been recovered. You are a true detective!`;
+                } else {
+                    message = `You accused ${accused}, but you don't have enough concrete evidence to prove it. The case goes cold.`;
+                }
+            } else {
+                message = `You accused ${accused}, but they are innocent! The real culprit escapes, and the blueprint is lost forever.`;
+            }
+            endGame(win, message);
+        }
+
+        // Ends the game and displays the final message
+        function endGame(win, message) {
+            gameState.gameEnded = true;
+            let finalMessage = win ?
+                `<p class="text-green-700 font-bold text-2xl mb-4">CASE SOLVED!</p><p>${message}</p>` :
+                `<p class="text-red-700 font-bold text-2xl mb-4">GAME OVER!</p><p>${message}</p>`;
+
+            showScene(
+                finalMessage,
+                [
+                    { text: "Play Again", action: restartGame }
+                ]
+            );
+            // Hide status box as game has ended
+            statusBox.style.display = 'none';
+        }
+
+        // Restarts the game
+        function restartGame() {
+            Object.assign(gameState, {
+                day: 1,
+                cluesFound: new Set(),
+                suspectsInterviewed: {},
+                currentLocation: 'School Grounds',
+                gameEnded: false
+            });
+            statusBox.style.display = 'block'; // Show status box again
+            startGame();
+        }
+
+        // Initializes the game
+        function startGame() {
+            mainActions();
+        }
+
+        // Start the game when the page loads
+        document.addEventListener('DOMContentLoaded', startGame);
+    </script>
+</body>
+</html>
